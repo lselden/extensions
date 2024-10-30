@@ -12,7 +12,7 @@
     throw new Error("This MIDI extension must run unsandboxed!");
   }
 
-  
+
   //#region midi message parsing/formatting
 
   /** 
@@ -118,7 +118,7 @@
 
   //#endregion
 
-  
+
   class MidiBackend extends EventTarget {
     status = 'pending';
 
@@ -188,7 +188,7 @@
 
       for (const output of this.midiAccess.outputs.values()) {
         if (!this.outputs.some(d => d.id === output.id)) {
-            this.outputs.push(output);
+          this.outputs.push(output);
         }
       }
     }
@@ -297,7 +297,7 @@
   // other method to defer the request until an opportune time?
   midiBackend.initialize();
 
-  
+
   /**
    * MIDI event is parsed by MidiBackend above
    * @param {MidiEvent} event 
@@ -337,40 +337,40 @@
   let lastNoteReleased = 0;
 
 
-      /**
-       * Handle note on/off events
-       * @param {MidiEvent & {pitch: number, velocity: number}} event 
-       */
-      function onNote(event) {
-        let {type, pitch: note, velocity} = event;
-        
-        if (type === 'noteOn' && velocity > 0) {
-          notesOn.push(note);
-          noteVelocities.push([note, velocity]);
-          lastNotePressed = note;
-          Scratch.vm.runtime.startHats("midi_whenAnyNote", {
-            pressedReleased: "pressed",
-          });
-          Scratch.vm.runtime.startHats("midi_whenNote", {
-            note: note,
-            pressedReleased: "pressed",
-          });
-        } else if (type === 'noteOff' || (type === 'noteOn' && velocity === 0)) {
-          lastNoteReleased = note;
-          notesOn.splice(notesOn.indexOf(note), 1);
-          noteVelocities.splice(
-            noteVelocities.findIndex((subArray) => subArray[0] === note),
-            1
-          );
-          Scratch.vm.runtime.startHats("midi_whenAnyNote", {
-            pressedReleased: "released",
-          });
-          Scratch.vm.runtime.startHats("midi_whenNote", {
-            note: note,
-            pressedReleased: "released",
-          });
-        }
-      }
+  /**
+   * Handle note on/off events
+   * @param {MidiEvent & {pitch: number, velocity: number}} event 
+   */
+  function onNote(event) {
+    let { type, pitch: note, velocity } = event;
+
+    if (type === 'noteOn' && velocity > 0) {
+      notesOn.push(note);
+      noteVelocities.push([note, velocity]);
+      lastNotePressed = note;
+      Scratch.vm.runtime.startHats("midi_whenAnyNote", {
+        pressedReleased: "pressed",
+      });
+      Scratch.vm.runtime.startHats("midi_whenNote", {
+        note: note,
+        pressedReleased: "pressed",
+      });
+    } else if (type === 'noteOff' || (type === 'noteOn' && velocity === 0)) {
+      lastNoteReleased = note;
+      notesOn.splice(notesOn.indexOf(note), 1);
+      noteVelocities.splice(
+        noteVelocities.findIndex((subArray) => subArray[0] === note),
+        1
+      );
+      Scratch.vm.runtime.startHats("midi_whenAnyNote", {
+        pressedReleased: "released",
+      });
+      Scratch.vm.runtime.startHats("midi_whenNote", {
+        note: note,
+        pressedReleased: "released",
+      });
+    }
+  }
 
   class MIDI {
     getInfo() {
