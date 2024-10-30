@@ -12,6 +12,112 @@
     throw new Error("This MIDI extension must run unsandboxed!");
   }
 
+  
+  //#region midi message parsing/formatting
+
+  /** 
+   * This section includes logic to map raw data coming from the 'midimessage'
+   * event into a friendly object representation of the event
+   * 
+   * 
+   * // definition for the parsed midi event
+   * @typedef {keyof typeof eventMapping} EventType
+   * @typedef {object} MidiEvent
+   * @property {EventType} type
+   * @property {number} [value1]
+   * @property {number} [value2]
+   * @property {number} [channel]
+   * @property {number} [device]
+   * @property {number} [time]
+   * @property {number} [pitch]
+   * @property {number} [velocity]
+   * @property {number} [cc]
+   * @property {number} [value]
+   */
+
+  /**
+   * MIDI commands with code, name, and parameters
+   * From: https://ccrma.stanford.edu/~craig/articles/linuxmidi/misc/essenmidi.html
+   * https://www.midi.org/specifications/item/table-1-summary-of-midi-message
+   *
+   * adapted from https://github.com/fheyen/musicvis-lib/blob/905edbdc8280e8ca76a329ffc83a160f3cda674a/src/fileFormats/Midi.js#L41
+   * 
+   * each key (the "EventType" relates to a raw midi "command". The "shorthand" could
+   * be used to format midi events to string (future). param1 and param2 determine what property of the object the value1 + value2 bytes mean (i.e. noteOn gets pitch + velocity, cc gets cc# and value)
+   */
+  const eventMapping = {
+    noteOn: { command: 0x90, shorthand: 'note', description: 'Note-on', param1: 'pitch', param2: 'velocity' },
+    noteOff: { command: 0x80, shorthand: 'off', description: 'Note-off', param1: 'pitch', param2: 'velocity' },
+    cc: { command: 0xB0, shorthand: 'cc', description: 'Continuous controller', param1: 'cc', param2: 'value' },
+    aftertouch: { command: 0xA0, shorthand: 'touch', description: 'Aftertouch', param1: 'pitch', param2: 'value' },
+    programChange: { command: 0xC0, shorthand: 'program', description: 'Patch change', param1: 'value' },
+    pitchBend: { command: 0xE0, shorthand: 'bend', description: 'Pitch bend', highResParam: 'value' },
+    channelPressure: { command: 0xD0, shorthand: 'pressure', description: 'Channel Pressure', param1: 'value' },
+    songPosition: { command: 0xF2, shorthand: 'songpos', description: 'Song Position Pointer (Sys Common)', highResParam: 'value' },
+    songSelect: { command: 0xF3, shorthand: 'songsel', description: 'Song Select (Sys Common)', param1: 'value' },
+    clock: { command: 0xF8, shorthand: 'clock', description: 'Timing Clock (Sys Realtime)' },
+    start: { command: 0xFA, shorthand: 'start', description: 'Start (Sys Realtime)' },
+    continue: { command: 0xFB, shorthand: 'continue', description: 'Continue (Sys Realtime)' },
+    stop: { command: 0xFC, shorthand: 'stop', description: 'Stop (Sys Realtime)' },
+    activeSensing: { command: 0xFE, shorthand: 'ping', description: 'Active Sensing (Sys Realtime)' },
+    reset: { command: 0xFF, shorthand: 'reset', description: 'System Reset (Sys Realtime)' },
+  };
+
+  // parse out full spec into quick lookups
+  /** @type {Map<number, EventType>} */
+  // @ts-ignore
+  const commandLookup = new Map(Object.entries(eventMapping).map(([key, { command }]) => [command, key]));
+
+  /** convert 7-bit byte pair into 0-16384 range
+   * adapted from https://github.com/djipco/webmidi/blob/master/src/Utilities.js#L444
+   */
+  function msbLsbToValue(value1, value2) {
+    return (value2 << 7) + value1;
+  }
+
+  /**
+   * Parse raw midi bytes into the actual event details
+   * @param {Uint8Array} data 
+   * @returns {MidiEvent | null}
+   */
+  function rawMessageToMidi(data) {
+    const [commandAndChannel, value1, value2] = data;
+
+    const channel = commandAndChannel % 16;
+    const command = commandAndChannel - channel;
+    const type = commandLookup.get(command);
+
+    if (!type) {
+      console.debug('unknown command type', command);
+      return null;
+    }
+
+    /** @type {MidiEvent} */
+    const event = {
+      type,
+      channel,
+      ...(value1 != undefined) && { value1 },
+      ...(value2 != undefined) && { value2 }
+    };
+
+    // look up the event type and parse the value1 + value2 bytes accordingly
+    const spec = eventMapping[type];
+
+    if (spec?.param1 && event.value1 != undefined) {
+      event[spec.param1] ??= event.value1;
+    }
+    if (spec?.param2 && event.value2 != undefined) {
+      event[spec.param2] ??= event.value2;
+    }
+    if (spec.highResParam) {
+      const { value } = msbLsbToValue(value1, value2);
+      event[spec.highResParam] = value;
+    }
+    return event;
+  }
+
+  //#endregion
+
   let midiInputDevices = [];
   let midiDeviceInfo = [];
   let notesOn = [];
