@@ -118,6 +118,151 @@
 
   //#endregion
 
+  
+  class MidiBackend extends EventTarget {
+    status = 'pending';
+
+    /** @type {MIDIAccess | undefined} */
+    midiAccess = undefined;
+
+    /** @type {MIDIInput[]} */
+    inputs = [];
+
+    /** @type {MIDIOutput[]} */
+    outputs = []
+
+    /** @type {Promise<boolean> | undefined} */
+    _init = undefined;
+    async initialize({ force = false, timeoutMilliseconds = 30_0000 } = {}) {
+      // exit early if no midi available
+      if (!navigator.requestMIDIAccess) {
+        return false;
+      }
+      // do not re-attempt if already initializing
+      if (this._init && !force) {
+        return this._init;
+      }
+
+      this._init = (async () => {
+        this.status = 'initializing';
+
+        // add timeout in case inital call never triggers request
+        let timer;
+        /** @type {Promise<never>} */
+        const whenTimeout = new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new DOMException('Timeout waiting for midi access')), timeoutMilliseconds);
+        });
+        try {
+          this.midiAccess = await Promise.race([
+            navigator.requestMIDIAccess(),
+            whenTimeout
+          ]);
+          clearTimeout(timer);
+          this.refreshDevices();
+          this.midiAccess.addEventListener('statechange', this.refreshDevices);
+          this.status = 'connected';
+          return true;
+        } catch (error) {
+          this.status = 'error';
+          return false;
+        } finally {
+          // in case anything needs to be notified when midi available has changed
+          this._emit('statechange');
+        }
+      })();
+      return this._init;
+    }
+
+    /**
+     * go through all midi inputs, and see if we already know about it
+     * TIP! If you use arrow functions on class methos then 'this' is automatically bound correctly, even if using as event listener
+     */
+    refreshDevices = () => {
+      for (const input of this.midiAccess.inputs.values()) {
+        if (!this.inputs.some(d => d.id === input.id)) {
+          input.addEventListener('midimessage', this._onInputEvent);
+          input.addEventListener('statechange', this._onDeviceStateChange);
+          this.inputs.push(input);
+        }
+      }
+
+      for (const output of this.midiAccess.outputs.values()) {
+        if (!this.outputs.some(d => d.id === output.id)) {
+            this.outputs.push(output);
+        }
+      }
+    }
+    get isMidiAvailable() {
+      return !!navigator.requestMIDIAccess && this.status !== 'error';
+    }
+    get isConnected() {
+      return this.status === 'connected';
+    }
+    /**
+     * Fired when device connected/disconnected.  
+     * @param {MIDIConnectionEvent} event
+     */
+    _onDeviceStateChange = (event) => {
+      const { port } = event;
+      if (!port) return;
+      const { type, id, name } = port;
+      const deviceList = type === 'input' ? this.inputs : this.outputs;
+      const index = deviceList.findIndex(dev => dev.id === id);
+      // not found - new device?
+      if (index === -1) {
+        this.refreshDevices();
+        return;
+      }
+
+      // if anything needs to be notified of new devices, or change in device state
+      this._emit('statechange', { index, id, name, type, state: port.state });
+    }
+    /**
+     * Where the actual midi message comes in and is parsed
+     * The re-emitted as an object
+     * @param {MIDIMessageEvent} event 
+     */
+    _onInputEvent = (event) => {
+      const {
+        data,
+        timeStamp
+      } = event;
+      /** @type {MIDIInput} */
+      // @ts-ignore
+      const device = event.target;
+
+      if (!data) return;
+
+      const deviceIndex = this.inputs.indexOf(device);
+      const midiEvent = rawMessageToMidi(data);
+      if (!midiEvent) {
+        console.warn('Unable to parse message', data);
+        // TODO handle?...this should only happen with Sysex/MMC messages, and
+        // those likely need {sysex: true} passed in requestMidiAccess
+        this._emit('midi:unhandled', event);
+      } else {
+        // REVIEW - using incoming timestamp which is likely just based off of when page loaded, but no particular standard. Could also just use Date.now()
+        midiEvent.time = timeStamp;
+        // REVIEW - This is storing a reference to midi device by array index,
+        // rather than ID. MidiBackend tries to maintain device index even when devices
+        // disconnected, but may make sense to use device.id instead.
+        if (deviceIndex !== -1) { midiEvent.device = deviceIndex; }
+
+        // actually emit the parsed event
+        this._emit('midi', midiEvent);
+      }
+    }
+    /**
+     * dispatch an event
+     * @param {string} name 
+     * @param {Record<string, any>} [data] 
+     */
+    _emit(name, data = {}) {
+      const event = new CustomEvent(name, { detail: data });
+      this.dispatchEvent(event);
+    }
+  }
+
   let midiInputDevices = [];
   let midiDeviceInfo = [];
   let notesOn = [];
