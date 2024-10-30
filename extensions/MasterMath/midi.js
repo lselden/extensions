@@ -303,6 +303,31 @@
    * @param {MidiEvent} event 
    */
   function onMIDIMessage(event) {
+    switch (event.type) {
+      case "noteOn":
+      case "noteOff":
+        // @ts-ignore
+        onNote(event);
+        break;
+      case "cc":
+      case "clock":
+      case "start":
+      case "continue":
+      case "stop":
+      case "reset":
+      case "aftertouch":
+      case "programChange":
+      case "pitchBend":
+      case "channelPressure":
+      case "songPosition":
+      case "songSelect":
+      case "activeSensing":
+      default:
+        console.log(
+          `Other MIDI Message: Type=${event.type}`,
+          event
+        );
+    }
   }
 
 
@@ -312,10 +337,14 @@
   let lastNoteReleased = 0;
 
 
-      function onMIDIMessage(event) {
-        const [status, note, velocity] = event.data;
-        const command = status & 0xf0;
-        if (command === 0x90 && velocity > 0) {
+      /**
+       * Handle note on/off events
+       * @param {MidiEvent & {pitch: number, velocity: number}} event 
+       */
+      function onNote(event) {
+        let {type, pitch: note, velocity} = event;
+        
+        if (type === 'noteOn' && velocity > 0) {
           notesOn.push(note);
           noteVelocities.push([note, velocity]);
           lastNotePressed = note;
@@ -326,7 +355,7 @@
             note: note,
             pressedReleased: "pressed",
           });
-        } else if (command === 0x80 || (command === 0x90 && velocity === 0)) {
+        } else if (type === 'noteOff' || (type === 'noteOn' && velocity === 0)) {
           lastNoteReleased = note;
           notesOn.splice(notesOn.indexOf(note), 1);
           noteVelocities.splice(
@@ -340,10 +369,6 @@
             note: note,
             pressedReleased: "released",
           });
-        } else {
-          console.log(
-            `Other MIDI Message: Status=${status}, Note=${note}, Velocity=${velocity}, Timestamp ${event.timeStamp}`
-          );
         }
       }
 
