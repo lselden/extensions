@@ -263,8 +263,49 @@
     }
   }
 
+  /** @type {string[]} */
   let midiInputDevices = [];
+  /** @type {Array<[id: string, name: string]>} */
   let midiDeviceInfo = [];
+
+  const midiBackend = new MidiBackend();
+  // emits statechange when request succeeded/failed, and on device connection events
+  midiBackend.addEventListener('statechange', (event) => {
+    switch (midiBackend.status) {
+      case 'connected':
+        // do something on success
+        break;
+      case 'error':
+        // do something on error
+        break;
+    }
+    // regenerate arrays on each update, rather than mutating
+    midiInputDevices = midiBackend.inputs.map(port => `[id: "${port.id}"` + ` name: "${port.name}"]`);
+    midiDeviceInfo = midiBackend.inputs.map(port => [port.id, port.name]);
+  });
+
+  midiBackend.addEventListener('midi', domEvent => {
+    /** @type {MidiEvent} */
+    // @ts-ignore
+    const midiEvent = domEvent.detail;
+    onMIDIMessage(midiEvent);
+  });
+
+  // trigger init
+  // QUESTION - should requestMidiAccess get called immediately on extension load?
+  // or should it get called in a vm.runtime.once('BEFORE_EXECUTE') call? Or some
+  // other method to defer the request until an opportune time?
+  midiBackend.initialize();
+
+  
+  /**
+   * MIDI event is parsed by MidiBackend above
+   * @param {MidiEvent} event 
+   */
+  function onMIDIMessage(event) {
+  }
+
+
   let notesOn = [];
   let noteVelocities = [];
   let lastNotePressed = 0;
