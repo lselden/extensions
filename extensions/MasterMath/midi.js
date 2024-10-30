@@ -352,7 +352,6 @@
         pressedReleased: "pressed",
       });
       Scratch.vm.runtime.startHats("midi_whenNote", {
-        note: note,
         pressedReleased: "pressed",
       });
     } else if (type === 'noteOff' || (type === 'noteOn' && velocity === 0)) {
@@ -366,7 +365,6 @@
         pressedReleased: "released",
       });
       Scratch.vm.runtime.startHats("midi_whenNote", {
-        note: note,
         pressedReleased: "released",
       });
     }
@@ -417,7 +415,7 @@
           },
           {
             opcode: "whenNote",
-            blockType: Scratch.BlockType.EVENT,
+            blockType: Scratch.BlockType.HAT,
             text: "when note [note] [pressedReleased]",
             isEdgeActivated: false,
             shouldRestartExistingThreads: true,
@@ -498,6 +496,14 @@
       } else {
         return;
       }
+    }
+
+    whenNote({ note, pressedReleased }, util) {
+        const expectedNote = Scratch.Cast.toNumber(note);
+        const last = (pressedReleased == "pressed") ? lastNotePressed : lastNoteReleased;
+
+        // return true/false from this method to determine if hat should process or not
+        return (expectedNote === last);
     }
 
     noteOn(args) {
