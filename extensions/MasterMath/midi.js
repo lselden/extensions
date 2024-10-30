@@ -505,12 +505,12 @@
     }
 
     noteVelocity(args) {
+      const velocityItem = noteVelocities.find((subArray) => subArray[0] === args.note) || [];
       if (
         notesOn.includes(args.note) &&
-        noteVelocities.find((subArray) => subArray[0] === args.note)[1] !==
-          undefined
+        velocityItem[1] !== undefined
       ) {
-        return noteVelocities.find((subArray) => subArray[0] === args.note)[1];
+        return velocityItem[1];
       }
     }
 
