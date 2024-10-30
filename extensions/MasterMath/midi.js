@@ -311,24 +311,6 @@
   let lastNotePressed = 0;
   let lastNoteReleased = 0;
 
-  if (navigator.requestMIDIAccess) {
-    navigator.requestMIDIAccess().then(onSuccess, onError);
-
-    function onSuccess(midiAccess) {
-      midiAccess.onstatechange = (event) => {
-        if (event.port.state == "connected") {
-          midiInputDevices.push([
-            `[id: "${event.port.id}"` + ` name: "${event.port.name}"]`,
-          ]);
-          midiDeviceInfo.push([event.port.id, event.port.name]);
-        } else if (event.port.state == "disconnected") {
-          midiInputDevices.splice(
-            [`[id: "${event.port.id}"` + ` name: "${event.port.name}"]`],
-            1
-          );
-          midiDeviceInfo.splice([event.port.id, event.port.name]);
-        }
-      };
 
       function onMIDIMessage(event) {
         const [status, note, velocity] = event.data;
@@ -364,20 +346,6 @@
           );
         }
       }
-
-      midiAccess.inputs.forEach((entry) => {
-        entry.onmidimessage = onMIDIMessage;
-      });
-    }
-
-    function onError(err) {
-      alert("MIDI Access Error:", err);
-      throw new Error("MIDI Access Error:", err);
-    }
-  } else {
-    alert("MIDI is not supported on this browser.");
-    throw new Error("MIDI is not supported on this browser.");
-  }
 
   class MIDI {
     getInfo() {
