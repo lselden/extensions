@@ -338,6 +338,9 @@
         onNote(event);
         break;
       case "cc":
+        // @ts-ignore
+        onCC(event);
+        break;
       case "clock":
       case "start":
       case "continue":
@@ -398,6 +401,27 @@
     }
   }
 
+
+  /** 
+   * Track the last value of each CC passed in
+   * FUTURE - split out by MIDI channel/device - right now this is "omni"
+   *          and doesn't care what channel/device the message comes from
+   * @type {Map<number, MidiEvent>}
+   */
+  const lastCCs = new Map();
+
+  /**
+   * Handle continuous controller events
+   * @param {MidiEvent & {cc: number, value: number}}  event 
+   */
+  function onCC(event) {
+    // store event - will be looked up immediately in the CC hats
+    lastCCs.set(event.cc, event);
+    Scratch.vm.runtime.startHats("midi_whenAnyCC");
+    Scratch.vm.runtime.startHats("midi_whenCC");
+  }
+
+  //#endregion
   class MIDI {
     getInfo() {
       return {
@@ -457,6 +481,25 @@
                 defaultValue: "pressed",
                 menu: "pressedReleased",
               },
+            },
+          },
+          {
+            opcode: "whenAnyCC",
+            blockType: Scratch.BlockType.HAT,
+            text: "when any CC",
+            isEdgeActivated: false,
+            shouldRestartExistingThreads: true
+          },
+          {
+            opcode: "whenCC",
+            blockType: Scratch.BlockType.HAT,
+            text: "when CC [CC]",
+            isEdgeActivated: false,
+            shouldRestartExistingThreads: true,
+            arguments: {
+              CC: {
+                type: Scratch.ArgumentType.NUMBER
+              }
             },
           },
           {
@@ -532,6 +575,27 @@
 
         // return true/false from this method to determine if hat should process or not
         return (expectedNote === last);
+    /**
+     * When any CC arrives
+     * @param {*} args 
+     * @param {VM.BlockUtility} util 
+     * @returns {boolean}
+     */
+    whenAnyCC(args, util) {
+      const last = lastOfType.cc;
+      return !!last;
+    }
+    whenCC({ CC }, util) {
+      const expectedCC = Scratch.Cast.toNumber(CC);
+      const last = lastOfType.cc;
+      
+      // filter to only continue if last cc event = what's specified in args
+      if (last && last.cc === expectedCC) {
+        return true;
+      }
+      // return true/false from this method to determine if hat should process or not
+      return false;
+    }
     }
 
     noteOn(args) {
