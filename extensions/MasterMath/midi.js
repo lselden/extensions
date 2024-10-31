@@ -367,6 +367,10 @@
   let lastNotePressed = 0;
   let lastNoteReleased = 0;
 
+  /** @type {Map<number, MidiEvent>} */
+  const lastNotes = new Map();
+  /** @type {MidiEvent | undefined} */
+  let lastNoteOnOff = undefined;
 
   /**
    * Handle note on/off events
@@ -374,6 +378,10 @@
    */
   function onNote(event) {
     let { type, pitch: note, velocity } = event;
+    
+    // add to list of notes. The type on the event (noteOn vs noteOff) can help indicate if active or not
+    lastNotes.set(note, event);
+    lastNoteOnOff = event;
 
     if (type === 'noteOn' && velocity > 0) {
       notesOn.push(note);
@@ -422,6 +430,29 @@
   }
 
   //#endregion
+
+  //#region Scratch Helpers
+
+  /**
+   * This section is for stuff to help with Scratch logic and dealing with menus etc.
+   */
+
+  // store variables per-thread, adapted from extension/Lily/TempVariabls2.js
+  const threadUtils = {
+    getThreadMidiValue({thread}) {
+      /** @type {MidiEvent | undefined} */
+      const event = thread._midi;
+      if (event && typeof event === 'object') {
+        return event;
+      }
+    },
+    setThreadMidiValue({thread}, event) {
+      thread._midi = event;
+    }
+  };
+
+  //#endregion
+
   class MIDI {
     getInfo() {
       return {
@@ -453,7 +484,7 @@
           "---",
           {
             opcode: "whenAnyNote",
-            blockType: Scratch.BlockType.EVENT,
+            blockType: Scratch.BlockType.HAT,
             text: "when any note [pressedReleased]",
             isEdgeActivated: false,
             shouldRestartExistingThreads: true,
@@ -568,13 +599,32 @@
         return;
       }
     }
+    whenAnyNote({ pressedReleased }, util) {
+      // stored above
+      const last = lastNoteOnOff;
+      const expectedType = pressedReleased === 'pressed' ? 'noteOn' : 'noteOff';
 
+      // make sure event matches passed arg
+      if (last && last.type === expectedType) {
+        threadUtils.setThreadMidiValue(util, last);
+        return true;
+      } else {
+        return false;
+      }
+    }
     whenNote({ note, pressedReleased }, util) {
         const expectedNote = Scratch.Cast.toNumber(note);
-        const last = (pressedReleased == "pressed") ? lastNotePressed : lastNoteReleased;
+        const expectedType = pressedReleased === 'pressed' ? 'noteOn' : 'noteOff';
+        const last = lastNoteOnOff;
 
-        // return true/false from this method to determine if hat should process or not
-        return (expectedNote === last);
+        // filter to only continue if last note event = what's specified in args
+        if (last && last.type === expectedType && last.pitch === expectedNote) {
+          threadUtils.setThreadMidiValue(util, last);
+          return true;
+        } else {
+          return false;
+        }
+    }
     /**
      * When any CC arrives
      * @param {*} args 
@@ -583,6 +633,10 @@
      */
     whenAnyCC(args, util) {
       const last = lastOfType.cc;
+      // store the found event on the thead for later access
+      if (last) {
+        threadUtils.setThreadMidiValue(util, last);
+      }
       return !!last;
     }
     whenCC({ CC }, util) {
@@ -591,6 +645,7 @@
       
       // filter to only continue if last cc event = what's specified in args
       if (last && last.cc === expectedCC) {
+        threadUtils.setThreadMidiValue(util, last);
         return true;
       }
       // return true/false from this method to determine if hat should process or not
