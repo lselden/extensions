@@ -534,6 +534,18 @@
             },
           },
           {
+            opcode: "lastEventProp",
+            blockType: Scratch.BlockType.REPORTER,
+            text: `last midi event [PROP]`,
+            arguments: {
+                PROP: {
+                    type: Scratch.ArgumentType.STRING,
+                    defaultValue: 'time',
+                    menu: 'PROPS'
+                }
+            }
+          },
+          {
             opcode: "noteOn",
             blockType: Scratch.BlockType.BOOLEAN,
             text: "is note [note] on?",
@@ -584,6 +596,21 @@
             acceptReporters: false,
             items: ["pressed", "released"],
           },
+          PROPS: {
+            acceptReporters: true,
+            items: [
+                { value: 'type', text: 'Type' },
+                { value: 'pitch', text: 'Note' },
+                { value: 'velocity', text: 'Velocity' },
+                { value: 'cc', text: 'Continuous Controller #' },
+                { value: 'value', text: 'CC Value' },
+                { value: 'pitchbend', text: 'Pitch Bend' },
+                { value: 'aftertouch', text: 'Aftertouch' },
+                { value: 'channel', text: 'Channel' },
+                { value: 'device', text: 'Device' },
+                { value: 'time', text: 'Timestamp' }
+            ]
+          }
         },
       };
     }
@@ -651,8 +678,54 @@
       // return true/false from this method to determine if hat should process or not
       return false;
     }
-    }
+    lastEventProp({ PROP }, util) {
+      const propName = Scratch.Cast.toString(PROP);
+      
+      // attempt to get the event within this thread (if using one of the whenNote/whenCC hats)
+      let last = threadUtils.getThreadMidiValue(util) || lastMidiEvent;
 
+      if (!last) return '';
+
+      switch (propName) {
+        case 'type':
+          return last.type;
+        case 'pitch':
+          // dont' return anything if not a pitch event
+          if (!['noteOn', 'noteOff', 'aftertouch'].includes(last.type)) { return ''; }
+          return last.pitch;
+        case 'velocity':
+          if (!['noteOn', 'noteOff'].includes(last.type)) { return ''; }
+          return last.velocity;
+        case 'cc':
+          if (last.type !== 'cc') { return ''; }
+          return last.cc;
+        case 'value':
+          if (last.type !== 'cc') { return ''; }
+          return last.value;
+        case 'channel':
+          return last.channel;
+        case 'device':
+          const device = (last.device != undefined) && midiInputDevices[last.device];
+          return device || '';
+        case 'pitchbend':
+          // special case - just get last pitchbend value since global
+          last = lastOfType['pitchBend'];
+          return (last && last.value != undefined) ? last.value : '';
+        case 'aftertouch':
+          // special case - get aftertouch value for thread note if possible
+          if (['noteOn', 'noteOff'].includes(last.type)) {
+            const expectedPitch = last.pitch;
+            last = lastOfType['aftertouch'];
+            if (!last || last.pitch != expectedPitch) {
+              return '';
+            }
+          }
+          return last.value;
+        case 'time':
+          return last.time;
+      }
+      
+    }
     noteOn(args) {
       return notesOn.includes(Number(args.note));
     }
