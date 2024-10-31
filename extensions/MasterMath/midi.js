@@ -118,6 +118,14 @@
 
   //#endregion
 
+  //#region midi backend
+
+  /**
+   * This class/section handles talking to native midi capabilities/devices
+   * It uses the browser native EventTarget capabilities to emit events that can be
+   * listened to the same as other browser functionality/nodes...but it formats the messages
+   * in a friendly way and separates the underlying implementation stuff from the Scratch API layer
+   */
 
   class MidiBackend extends EventTarget {
     status = 'pending';
@@ -129,7 +137,7 @@
     inputs = [];
 
     /** @type {MIDIOutput[]} */
-    outputs = []
+    outputs = [];
 
     /** @type {Promise<boolean> | undefined} */
     _init = undefined;
@@ -263,6 +271,12 @@
     }
   }
 
+  //#endregion
+
+  //#region glue
+
+  /** INITIALIZE THE STUFF! This is where we actually glue the MidiBackend to the frontend */
+
   /** @type {string[]} */
   let midiInputDevices = [];
   /** @type {Array<[id: string, name: string]>} */
@@ -296,13 +310,27 @@
   // or should it get called in a vm.runtime.once('BEFORE_EXECUTE') call? Or some
   // other method to defer the request until an opportune time?
   midiBackend.initialize();
-
+  
+  /**
+   * // keep track of the last event of each type of midi event
+   * @type {Partial<Record<EventType, MidiEvent>>}
+   */
+  let lastOfType = {};
+  /**
+   * Store last midi event of ANY type
+   * @type {MidiEvent | undefined}
+   */
+  let lastMidiEvent = undefined;
 
   /**
    * MIDI event is parsed by MidiBackend above
    * @param {MidiEvent} event 
    */
   function onMIDIMessage(event) {
+    
+    lastMidiEvent = event;
+    lastOfType[event.type] = event;
+
     switch (event.type) {
       case "noteOn":
       case "noteOff":
