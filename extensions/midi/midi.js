@@ -3,6 +3,7 @@
 // Description: An extension to use the WebMIDI API for MIDI input/output.
 // By: lselden
 // By: CHCAT1320
+// By: SamuelLouf
 // License: MPL-2.0
 
 (function (Scratch) {
@@ -946,6 +947,20 @@
     duration: { key: "dur", text: Scratch.translate("(dur) Duration") },
   };
 
+  /**
+   * 
+   * @param {string} path 
+   * @returns 
+   */
+  const loadExtension = (path) => {
+    // @ts-ignore
+    if (Scratch.vm.extensionManager.workerURLs.include("http://localhost:8000/midi/synth.js")){ // Dev
+      Scratch.vm.extensionManager.loadExtensionURL(`http://localhost:8000/${path}.js`);
+    } else { // Desktop/Website
+      Scratch.vm.extensionManager.loadExtensionURL(`https://extensions.turbowarp.org/${path}.js`);
+    }
+  }
+
   //#endregion utils
 
   //#region wrapper
@@ -1488,6 +1503,38 @@
   //   return (seconds * tempo) / 60;
   // }
 
+  /**
+   *
+   * @param {number} ms
+   * @returns
+   */
+  const delay = (ms) => new Promise((resolve) => {setTimeout(resolve, ms);});
+
+  /**
+   * 
+   * @param {number} beats 
+   * @returns 
+   */
+  const waitBeats = async (beats) => {
+    beats = Scratch.Cast.toNumber(beats ?? 0);
+    if (!Number.isFinite(beats) || beats <= 0) return;
+
+    let accumulatedBeats = 0;
+    let lastCheck = performance.now();
+    while (accumulatedBeats < beats) {
+      const now = performance.now();
+      const bpm = getTempo();
+      const deltaMs = now - lastCheck;
+      lastCheck = now;
+      accumulatedBeats += (deltaMs * bpm) / 60000;
+      if (accumulatedBeats >= beats) break;
+      const remainingBeats = beats - accumulatedBeats;
+      const remainingMs = (remainingBeats * 60000) / (bpm || 120);
+      const sleepMs = Math.max(1, Math.min(Math.round(remainingMs), 10));
+      await delay(sleepMs);
+    }
+  }
+
   //#endregion wrapper
 
   //#region Scratch Extension
@@ -1777,6 +1824,17 @@
             },
           },
           {
+            opcode: "waitForBeats",
+            blockType: Scratch.BlockType.COMMAND,
+            text: Scratch.translate("wait for [BEATS] beats"),
+            arguments: {
+              BEATS: {
+                type: Scratch.ArgumentType.NUMBER,
+                defaultValue: 0.25,
+              },
+            },
+          },
+          {
             opcode: "sendOutputEvent",
             blockType: Scratch.BlockType.COMMAND,
             text: Scratch.translate("Send [EVENT] to [DEVICE]"),
@@ -1959,6 +2017,17 @@
               },
             },
           },
+          {
+            func: "addMIDISynthExtension",
+            text: Scratch.translate("Add the MIDI Synth Extension"),
+            blockType: Scratch.BlockType.BUTTON,
+          },
+          {
+            opcode: "addMIDISynthExtension",
+            text: Scratch.translate("Add the MIDI Synth Extension"),
+            blockType: Scratch.BlockType.COMMAND,
+            hideFromPalette: true,
+          },
         ],
         menus: {
           EVENT_TYPES: {
@@ -2140,6 +2209,8 @@
     constructor() {
       this.midi = new MidiBackend();
       this.recorder = new MidiRecorder();
+      // @ts-ignore
+      this.synth = null;
       /**
        * Lazy initialize midi - only upon first executing, and used in other calls to make sure it gets triggered
        */
@@ -2283,6 +2354,8 @@
         value: d.id,
       }));
       return [{ text: Scratch.translate("any"), value: "ANY" }].concat(
+        this.synth ? {text: Scratch.translate("MIDI Synth Extension"), value: "SYNTHEXT"} : []
+      ).concat(
         outputList
       );
     }
@@ -2357,7 +2430,7 @@
       }
       return false;
     }
-    playNoteForBeats({ NOTE, BEATS }, util) {
+    async playNoteForBeats({ NOTE, BEATS }, util) {
       let text = Scratch.Cast.toString(NOTE);
       const beats = Scratch.Cast.toString(BEATS);
 
@@ -2369,12 +2442,32 @@
       // default event type is note, so any valid input will be treated as note by default
       const event = stringToMidi(`${text}`);
       if (event) {
+        if (event.beats > 0) {
+          if (event.type === "note") {
+            this.midi.sendOutputEvent({ ...event, dur: undefined });
+            await waitBeats(event.beats);
+            this.midi.sendOutputEvent({
+              ...event,
+              type: "noteOff",
+              value2: 0,
+              velocity: 0,
+              dur: undefined,
+            });
+            return;
+          }
+
+          this.midi.sendOutputEvent(event);
+          return waitBeats(event.beats);
+        }
+
         this.midi.sendOutputEvent(event);
+        if (event.dur > 0) {
+          return delay(event.dur * 1000);
+        }
       }
-      const dur = event.dur || event.beats ? beatsToSeconds(event.beats) : 0;
-      if (dur > 0) {
-        return new Promise((resolve) => setTimeout(resolve, dur * 1000));
-      }
+    }
+    waitForBeats({ BEATS }, util) {
+      return waitBeats(BEATS);
     }
     sendOutputEvent({ EVENT, DEVICE }, util) {
       const text = Scratch.Cast.toString(EVENT);
@@ -2385,6 +2478,12 @@
           console.debug("Unable to parse output text", EVENT);
         }
         return;
+      }
+      if (DEVICE === "SYNTHEXT" || DEVICE === "ANY") {
+        if (this.synth) {
+          this.synth.input(event);
+        }
+        if (DEVICE === "SYNTHEXT") return;
       }
       if (DEVICE) {
         event.device = this._getDeviceIndex(DEVICE, "output");
@@ -2663,6 +2762,15 @@
         : normalizeType(event.type);
       if (!event.type && event.pitch) event.type = "note";
       return event ? midiToString(event) : "";
+    }
+
+    addMIDISynthExtension(extension = null){
+      if (extension){
+        this.synth = extension;
+        // refresh menus
+      } else {
+        loadExtension("midi/synth");
+      }
     }
   }
 
