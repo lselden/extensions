@@ -324,3 +324,6 @@ All images in this folder are licensed under the [GNU General Public License ver
 
 ## DogeisCut/FormatNumbers.png
  - Created by [@Dillon](https://github.com/DillonRGaming)
+
+## midi/midi.svg
+ - Created by [@SamuelLouf](https://github.com/samuellouf)
